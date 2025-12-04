@@ -1,0 +1,82 @@
+import os
+import pandas as pd
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+
+# ---- Config ----
+DATA_FILE = "emails.csv"
+BATCH, EPOCHS = 32, 4
+MAX_TOKENS, SEQ_LEN, EMBED_DIM = 8000, 120, 64
+MODEL_FILE, VOCAB_FILE = "spam_model.keras", "spam_model_vocab.txt"
+
+# ---- Load & normalize (concise) ----
+def load_csv(path):
+    if not os.path.exists(path):
+        raise FileNotFoundError(path)
+    df = pd.read_csv(path, encoding="latin-1", low_memory=False)
+    df.columns = df.columns.str.lower()
+    if {"v1","v2"}.issubset(df.columns):
+        df = df[["v1","v2"]].rename(columns={"v1":"label","v2":"text"})
+    elif {"text","label"}.issubset(df.columns):
+        df = df[["text","label"]]
+    elif {"text","spam"}.issubset(df.columns):
+        df = df.rename(columns={"spam":"label"})[["text","label"]]
+    else:
+        df = df.iloc[:, :2]; df.columns = ["text","label"]
+    df = df.dropna(subset=["text","label"]).reset_index(drop=True)
+    df["label"] = (df["label"].astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .replace({"ham":"0","spam":"1"}))
+    df["label"] = pd.to_numeric(df["label"], errors="coerce")
+    df = df.dropna(subset=["label"])
+    return df[df["label"].astype(int).isin([0,1])].assign(label=lambda d: d["label"].astype(int))
+
+# ---- Prepare data ----
+df = load_csv(DATA_FILE)
+train_t, val_t, train_y, val_y = train_test_split(
+    df["text"].astype(str), df["label"], test_size=0.15, stratify=df["label"], random_state=42
+)
+
+vec = tf.keras.layers.TextVectorization(max_tokens=MAX_TOKENS, output_sequence_length=SEQ_LEN)
+vec.adapt(train_t.values)
+
+def ds(texts, labels, batch=BATCH, shuffle=True):
+    ds_ = tf.data.Dataset.from_tensor_slices((texts.values, labels.values))
+    if shuffle: ds_ = ds_.shuffle(len(texts), seed=42)
+    return ds_.batch(batch).map(lambda x,y: (vec(x), y)).prefetch(tf.data.AUTOTUNE)
+
+train_ds, val_ds = ds(train_t, train_y), ds(val_t, val_y, shuffle=False)
+
+# ---- Model ----
+from tensorflow.keras import layers, models
+model = models.Sequential([
+    layers.Input((SEQ_LEN,)),
+    layers.Embedding(MAX_TOKENS, EMBED_DIM),
+    layers.GlobalAveragePooling1D(),
+    layers.Dense(64, activation="relu"),
+    layers.Dropout(0.2),
+    layers.Dense(1, activation="sigmoid")
+])
+model.compile(loss="binary_crossentropy", optimizer="adam", metrics=["accuracy"])
+
+# ---- Train / Eval / Save ----
+model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)
+loss, acc = model.evaluate(val_ds, verbose=0)
+print(f"Validation loss={loss:.4f}  acc={acc:.4f}")
+model.save(MODEL_FILE)
+with open(VOCAB_FILE, "w", encoding="utf-8") as f:
+    f.write("\n".join(vec.get_vocabulary()))
+
+# ---- Predict helper ----
+def predict_text(model, vectorizer, text, thr=0.5):
+    x = vectorizer([text])                     # vectorize single sample
+    p = float(model.predict(x, verbose=0)[0,0])
+    label = "SPAM" if p >= thr else "NOT SPAM"
+    print(f"\nInput: {text}\nPrediction: {label} ({p:.4f})\n")
+    return p
+
+# quick smoke test when run directly
+if __name__ == "__main__":
+    predict_text(model, vec, "Congratulations! You've won a free prize. Click here.")
+    predict_text(model, vec, "Hey, are we still meeting tomorrow?")
