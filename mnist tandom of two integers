@@ -1,0 +1,39 @@
+import tensorflow as tf
+from tensorflow.keras import models, layers
+import numpy as np
+import matplotlib.pyplot as plt
+import random
+
+# 1. Load MNIST data
+(x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+x_train, x_test = x_train/255.0, x_test/255.0  # Normalize
+
+# 2. Build Model
+model = models.Sequential([
+    layers.Flatten(input_shape=(28,28)),
+    layers.Dense(128, activation='relu'),
+    layers.Dense(10, activation='softmax')
+])
+
+model.compile(optimizer='adam',
+              loss='sparse_categorical_crossentropy',
+              metrics=['accuracy'])
+
+# 3. Train Model
+model.fit(x_train, y_train, epochs=5)
+
+# 4. Pick 2 random test images
+random_indexes = np.random.choice(len(x_test), 2, replace=False)
+images = x_test[random_indexes]
+actual = y_test[random_indexes]
+
+# 5. Predict
+predictions = model.predict(images)
+predicted_labels = np.argmax(predictions, axis=1)
+
+# 6. Display images & results
+for i in range(2):
+    plt.imshow(images[i], cmap='gray')
+    plt.title(f"Actual: {actual[i]}  |  Predicted: {predicted_labels[i]}")
+    plt.axis("off")
+    plt.show()
