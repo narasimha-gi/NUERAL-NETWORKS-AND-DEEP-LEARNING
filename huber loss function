@@ -1,0 +1,68 @@
+import numpy as np
+
+# -----------------------------
+# Huber Loss Function
+# -----------------------------
+def huber_loss(y_true, y_pred, delta=1.0):
+    r = y_true - y_pred
+    if abs(r) <= delta:
+        return 0.5 * r**2
+    else:
+        return delta * (abs(r) - 0.5 * delta)
+
+# -----------------------------
+# Gradient of Huber Loss
+# -----------------------------
+def huber_gradient(y_true, y_pred, delta=1.0):
+    r = y_pred - y_true
+    if abs(r) <= delta:
+        return r
+    else:
+        return delta * np.sign(r)
+
+# -----------------------------
+# Training Data (y = 2x)
+# -----------------------------
+X = np.array([1, 2, 3, 4], dtype=float)
+y = np.array([2, 4, 6, 8], dtype=float)
+
+# -----------------------------
+# Initialize Parameters
+# -----------------------------
+w = 0.0   # weight
+b = 0.0   # bias
+learning_rate = 0.1
+delta = 1.0
+epochs = 30
+
+# -----------------------------
+# Training Loop
+# -----------------------------
+for epoch in range(epochs):
+    total_loss = 0.0
+    
+    for xi, yi in zip(X, y):
+        # Forward pass
+        y_pred = w * xi + b
+        
+        # Loss
+        loss = huber_loss(yi, y_pred, delta)
+        total_loss += loss
+        
+        # Backpropagation
+        grad = huber_gradient(yi, y_pred, delta)
+        dw = grad * xi
+        db = grad
+        
+        # Update parameters
+        w -= learning_rate * dw
+        b -= learning_rate * db
+    
+    print(f"Epoch {epoch+1:02d} | Loss: {total_loss:.4f} | w: {w:.4f} | b: {b:.4f}")
+
+# -----------------------------
+# Testing
+# -----------------------------
+x_test = 5
+y_test_pred = w * x_test + b
+print("\nPrediction for x = 5:", y_test_pred)
